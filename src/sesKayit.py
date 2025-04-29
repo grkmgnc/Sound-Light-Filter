@@ -1,7 +1,8 @@
+import os
+import subprocess
 import time
-import obswebsocket
 from obswebsocket import obsws, requests
-
+import winreg
 
 class SesKayit:
     def __init__(self, host="localhost", port=4444, password="", duration=5):
@@ -18,7 +19,7 @@ class SesKayit:
         self.password = password
         self.duration = duration
         self.ws = obsws(self.host, self.port, self.password)
-
+        self.obs_path=None
     def connect(self):
         """OBS WebSocket'e bağlan."""
         try:
@@ -48,9 +49,52 @@ class SesKayit:
         except Exception as e:
             print(f"Kaydı durdururken hata oluştu: {e}")
 
+    def get_obs_install_path(self):
+        try:
+            # Kayıt defterinden OBS'nin kurulu olduğu dizini al
+            registry_path = r"SOFTWARE\OBS Studio"
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, registry_path)
+
+            try:
+                install_path, _ = winreg.QueryValueEx(key, "InstallLocation")
+            except FileNotFoundError:
+                install_path, _ = winreg.QueryValueEx(key, "Varsayılan")
+            winreg.CloseKey(key)
+
+        except Exception as e:
+            print(f"OBS'nin kurulu olduğu yolu alırken bir hata oluştu: {e}")
+            self.obs_path=r"C:\Program Files\obs-studio\bin\64bit\obs64.exe"
+            if self.obs_path:
+                print("Default yol alındı.")
+            else:
+                print("Yol alinamadi.")
+            return None
+
+        # OBS yolunu al
+        self.obs_path = os.path.join(install_path, "bin", "64bit", "obs64.exe")
+        if self.obs_path:
+            print(f"OBS'nin kurulu olduğu yol: {self.obs_path}")
+        else:
+            print("OBS'nin kurulu olduğu yol alınamadı.")
+
+    def start_obs(self):
+        #working_directory = r"C:\Program Files\obs-studio"  # OBS'nin kurulu olduğu dizin
+        # Çalışma dizinini ayarla
+        #os.chdir(working_directory)
+        #os.environ["OBS_PATH"] = r"C:\Program Files\obs-studio"
+        # OBS'nin başlatılacak komutları
+        params = ["--minimized"]
+
+        try:
+            # subprocess kullanarak OBS'yi arka planda başlatıyoruz
+            subprocess.Popen([self.obs_path] + params, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            print("OBS başlatıldı.")
+        except Exception as e:
+            print(f"OBS başlatılırken bir hata oluştu: {e}")
+
     def start_and_stop_recording(self):
         """5 saniyelik ses kaydını başlatır ve durdurur."""
-        # Kaydı başlat
+       # Kaydı başlat
         self.start_recording()
 
         # 5 saniye bekleyin (ses kaydının süresi)
@@ -69,5 +113,3 @@ class SesKayit:
         except KeyboardInterrupt:
             print("Program sonlandırıldı.")
             self.disconnect()  # Bağlantıyı sonlandır
-
-
