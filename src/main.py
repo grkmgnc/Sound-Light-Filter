@@ -1,13 +1,25 @@
+import json
 import os
 import time
 import subprocess
-from src.frequencyAnalysis import FrekansAnalizi
+from src.frekansAnalizi import FrekansAnalizi
 from src.sesKayit import SesKayit  # OBS tabanlı ses kaydı sınıfı
+from src.model import ModelEgitimi
+from src.canliFiltre import CanliSesFiltreleme
+import threading
+
 
 class Main:
     def __init__(self):
         self.ses_kaydi = SesKayit(duration=5, password="121361")
-        self.frekans_analizi = FrekansAnalizi()
+        self.model_egitim = ModelEgitimi()
+        self.canli_filtre_thread = None
+        self.stop_event = threading.Event()
+        self.canli_filtre = None
+        self.lowcut = 50
+        self.highcut = 2000
+        self.kullanici_geri_bildirim = None  # Kullanıcı geri bildirimi
+        self.geri_bildirim_thread = None
 
         # OBS video dosyaları için klasör yolları
         video_folder_english = os.path.join(os.path.expanduser("~"), "Videos")
@@ -33,7 +45,7 @@ class Main:
         self.output_dir = os.path.join(os.getcwd(), "data", "kaydedilen_sesler")
         os.makedirs(self.output_dir, exist_ok=True)
 
-        self.ses_kaydi.connect()
+
 
     def convert_to_wav(self, input_path, output_path):
         """OBS'nin oluşturduğu video dosyasından .wav çıkar."""
@@ -65,12 +77,34 @@ class Main:
         except FileNotFoundError:
             return False
 
+    def kullanici_geri_bildirim_thread(self):
+        """Kullanıcıdan geri bildirim almak için sürekli çalışan bir thread."""
+        while True:
+            self.kullanici_geri_bildirim = input("Geri bildirim (1: rahatsız edici, 0: normal, Enter: boş bırak): ")
+            time.sleep(5)  # 5 saniyede bir kullanıcı geri bildirimi alınacak
+
+    def load_model_parameters(self):
+        """Model parametrelerini dosyadan yükler"""
+        try:
+            with open('model_params.json', 'r') as f:
+                params = json.load(f)
+                self.lowcut = params.get('lowcut', self.lowcut)  # Eğer dosya yoksa varsayılan değeri kullan
+                self.highcut = params.get('highcut', self.highcut)  # Eğer dosya yoksa varsayılan değeri kullan
+                print(f"Model parametreleri yüklendi: Lowcut: {self.lowcut}, Highcut: {self.highcut}")
+                return self.lowcut,self.highcut
+        except FileNotFoundError:
+            print("Model parametre dosyası bulunamadı, varsayılan parametreler kullanılacak.")
+            return self.lowcut,self.highcut
+
     def run(self):
         try:
+            #self.ses_kaydi.get_obs_install_path()
+            #self.ses_kaydi.start_obs()
+            self.ses_kaydi.connect()
             while True:
                 # OBS ile 5 saniyelik kayıt al
                 self.ses_kaydi.start_and_stop_recording()
-                time.sleep(3)
+                #time.sleep(3)
 
                 # En son kaydedilen video dosyasını bul
                 latest_video = self.get_latest_obs_recording()
@@ -82,19 +116,48 @@ class Main:
                 timestamp = int(time.time())
                 wav_path = os.path.join(self.output_dir, f"obs_kayit_{timestamp}.wav")
                 self.convert_to_wav(latest_video, wav_path)
-
+                if not (self.geri_bildirim_thread and self.geri_bildirim_thread.is_alive()):
+                    self.geri_bildirim_thread = threading.Thread(target=self.kullanici_geri_bildirim_thread)
+                    self.geri_bildirim_thread.start()  # Geri bildirim thread'ini başlat
+                # Eğer kullanıcı geri bildirim verdiyse, model eğitimi yapılır
+                if self.kullanici_geri_bildirim:
+                    lc, hc = self.model_egitim.egit(wav_path, self.kullanici_geri_bildirim)
+                    print(f"Güncellenmiş lowcut: {lc}, highcut: {hc}")
+                else:
+                    print("Geri bildirim verilmedi, varsayılan parametrelerle devam ediliyor.")
+                    lc, hc = self.load_model_parameters()
                 # Frekans analizi yap
-                self.frekans_analizi.analiz_et(wav_path)
+                frekans_analizi = FrekansAnalizi(lowcut=lc, highcut=hc)
+                frekans_analizi.analiz_et(wav_path)
 
-                # Kullanıcı geri bildirimi vs.
-                kullanici_geri_bildirim = 1
-                # self.model_egitimi.egit(wav_path, kullanici_geri_bildirim)
+                if self.canli_filtre_thread and self.canli_filtre_thread.is_alive():
+                    print("→ Eski canlı filtreleme thread'i tespit edildi, durduruluyor...")
+                    self.stop_event.set()
+                    self.canli_filtre_thread.join()
+                    print("→ Eski thread başarıyla sonlandırıldı.")
+
+                # Yeni thread için event sıfırlanıyor
+                self.stop_event.clear()
+
+                print("→ Yeni CanliSesFiltreleme nesnesi oluşturuluyor...")
+                self.canli_filtre = CanliSesFiltreleme(lowcut=lc, highcut=hc, stop_event=self.stop_event)
+
+                print("→ Yeni thread nesnesi oluşturuluyor...")
+                self.canli_filtre_thread = threading.Thread(target=self.canli_filtre.start_stream, daemon=True)
+
+                print("→ Yeni canlı filtreleme thread'i başlatılıyor...")
+                self.canli_filtre_thread.start()
+                print("→ Başlatıldı mı?:", self.canli_filtre_thread.is_alive())
 
                 time.sleep(1)
 
         except KeyboardInterrupt:
             print("Program sonlandırıldı.")
+            self.stop_event.set()
+            if self.canli_filtre_thread and self.canli_filtre_thread.is_alive():
+                self.canli_filtre_thread.join()
             self.ses_kaydi.disconnect()
+
 
 if __name__ == "__main__":
     # Main sınıfını başlat ve çalıştır
