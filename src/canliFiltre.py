@@ -3,42 +3,40 @@ import time
 import soundfile as sf
 import pyaudio
 import numpy as np
-from src.filtre import DSPFiltreleme
+from src.filtre import DSPFiltreleme  # int16 giriş-çıkış uyumlu sürüm
 
 class CanliSesFiltreleme:
-    def __init__(self, lowcut=50, highcut=2000 , rate=44100, chunk_size=1024, output_dir="data/filtered_audio",stop_event=None):
-        """
-        - model_egitimi: ModelEgitimi sınıfı örneği
-        - rate: Sesin örnekleme hızı
-        - chunk_size: Ses parçası boyutu
-        """
-        self.lowcut=lowcut
-        self.highcut=highcut
+    def __init__(self, lowcut=50, highcut=2000, rate=48000, chunk_size=2048,
+                 output_dir="data/filtered_audio", stop_event=None):
+        self.lowcut = lowcut
+        self.highcut = highcut
         self.rate = rate
         self.chunk_size = chunk_size
-        self.output_dir=output_dir
-        self.stop_event = stop_event
+        self.output_dir = output_dir
+        self.stop_event = stop_event or self._create_default_stop_event()
+
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
+
         self.p = pyaudio.PyAudio()
-        self.outputDeviceNames= ["Hoparlor","Hoparl","Speakers","Speaker","Headphone","Kulaklik"]
-        # Giriş ve çıkış cihazlarını otomatik belirle
-        self.input_device_index = self._find_device("CABLE Output",)
-        self.output_device_index = self._find_device(self.outputDeviceNames, is_input=False)  # gerekirse özelleştirilir
+        self.input_device_keywords = ["CABLE Output"]
+        self.output_device_keywords = ["Voicemeeter Input"]
+        self.input_device_index = self._find_device(self.input_device_keywords, is_input=True)
+        self.output_device_index = self._find_device(self.output_device_keywords, is_input=False)
+
+    def _create_default_stop_event(self):
+        import threading
+        return threading.Event()
 
     def _find_device(self, name_keywords, is_input=True):
-        """
-        Cihaz listesinde adı verilen anahtar kelimelerden birini içeren ilk cihazın index'ini döndür.
-        name_keywords: str ya da list[str]
-        """
         if isinstance(name_keywords, str):
-            name_keywords = [name_keywords]  # Tek kelimeyi listeye çevir
+            name_keywords = [name_keywords]
 
         for i in range(self.p.get_device_count()):
             dev_info = self.p.get_device_info_by_index(i)
             device_name = dev_info.get('name', '').lower()
             if ((is_input and dev_info.get('maxInputChannels') > 0) or
-                    (not is_input and dev_info.get('maxOutputChannels') > 0)):
+                (not is_input and dev_info.get('maxOutputChannels') > 0)):
                 if any(keyword.lower() in device_name for keyword in name_keywords):
                     print(f"[cihaz seçimi] Bulundu: {dev_info['name']} (index: {i})")
                     return i
@@ -46,45 +44,67 @@ class CanliSesFiltreleme:
         print(f"[cihaz seçimi] Uygun cihaz bulunamadı: {name_keywords}")
         return None
 
+    def analiz_frekans_araligi(self, data_int16, rate):
+        if data_int16.dtype == np.int16:
+            data = data_int16.astype(np.float32) / 32768.0
+        else:
+            data = data_int16
+
+        data = data - np.mean(data)  # DC bileşeni çıkar
+
+        fft_result = np.fft.rfft(data)
+        fft_magnitude = np.abs(fft_result)
+        freqs = np.fft.rfftfreq(len(data), 1.0 / rate)
+
+        # ⚠️ Daha sert eşik
+        threshold = np.max(fft_magnitude) * 0.3  # %30'un altını sayma
+        aktif_frekanslar = freqs[fft_magnitude > threshold]
+
+        if len(aktif_frekanslar) == 0:
+            return 0.0, 0.0
+
+        return np.min(aktif_frekanslar), np.max(aktif_frekanslar)
+
     def start_stream(self):
         print("[start_stream] Başladı")
+        input_stream = None
+        output_stream = None
+        filtered_frames = []
+
         try:
-            stream = pyaudio.PyAudio().open(
+            input_stream = self.p.open(
                 format=pyaudio.paInt16,
                 channels=1,
                 rate=self.rate,
                 input=True,
-                output=True,
-                frames_per_buffer=self.chunk_size,
                 input_device_index=self.input_device_index,
-                output_device_index=self.output_device_index,
-                #output_device_index=1
-                stream_callback=None,
-                start=True
+                frames_per_buffer=self.chunk_size
             )
 
-            dsp_filtreleme = DSPFiltreleme(lowcut=self.lowcut, highcut=self.highcut, rate=self.rate)
-            filtered_frames = []
+            output_stream = self.p.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=self.rate,
+                output=True,
+                output_device_index=self.output_device_index,
+                frames_per_buffer=self.chunk_size
+            )
 
+            dsp = DSPFiltreleme(lowcut=self.lowcut, highcut=self.highcut, rate=self.rate)
+            dsp.reset()
             print("[start_stream] Giriş akışı açık. Döngüye giriliyor...")
 
             while not self.stop_event.is_set():
+                raw = input_stream.read(self.chunk_size, exception_on_overflow=False)
+                input_data = np.frombuffer(raw, dtype=np.int16)
+                print(f"[DEBUG] input max: {np.max(input_data):.5f}")
+                filtered = dsp.filtrele(input_data)
+                print(f"[DEBUG] filtered max: {np.max(filtered):.5f}")
+                min_hz, max_hz = self.analiz_frekans_araligi(filtered, self.rate)
+                print(f"[Frekans] Min: {min_hz:.2f} Hz | Max: {max_hz:.2f} Hz")
 
-                input_data = np.frombuffer(stream.read(self.chunk_size), dtype=np.int16)
-                filtered = dsp_filtreleme.filtrele(input_data.astype(np.float32))
-
-                # Hafif bir kazanç uygulayıp clip koruması
-                filtered *= 0.5
-                filtered = np.clip(filtered, -1.0, 1.0)
-                # Clipping olmaması için normalize et
-                max_val = np.max(np.abs(filtered))
-                if max_val > 0:
-                    filtered = filtered / max_val
-                # tekrar int16 yap (ses dosyasına yazmak ve oynatmak için)
-                filtered_int16 = (filtered * 32767).astype(np.int16)
-
-                stream.write(filtered_int16.tobytes())
-                filtered_frames.append(filtered_int16.copy())
+                output_stream.write(filtered.tobytes())
+                filtered_frames.append(filtered.copy())
 
             print("[start_stream] stop_event algılandı. Döngü sonlandırılıyor...")
 
@@ -93,18 +113,19 @@ class CanliSesFiltreleme:
 
         finally:
             print("[start_stream] finally bloğu çalışıyor. Kapanış işlemleri yapılıyor.")
-            stream.stop_stream()
-            stream.close()
+            if input_stream:
+                input_stream.stop_stream()
+                input_stream.close()
+            if output_stream:
+                output_stream.stop_stream()
+                output_stream.close()
             self.p.terminate()
+
             if filtered_frames:
                 final_audio = np.concatenate(filtered_frames)
-                max_val = np.max(np.abs(final_audio))
-                if max_val > 0:
-                    final_audio = final_audio / max_val
-                final_audio_int16 = (final_audio * 32767).astype(np.int16)
                 timestamp = time.strftime("%Y%m%d-%H%M%S")
                 output_filename = os.path.join(self.output_dir, f"filtered_audio_{timestamp}.wav")
-                sf.write(output_filename, final_audio_int16, self.rate)
+                sf.write(output_filename, final_audio, self.rate)
                 print(f"[start_stream] Filtrelenmiş ses kaydedildi: {output_filename}")
             else:
                 print("[start_stream] Kayıt yapılacak ses bulunamadı.")
