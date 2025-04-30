@@ -55,7 +55,7 @@ class Main:
 
         subprocess.call([
             "ffmpeg", "-y", "-i", input_path,
-            "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "1",
+            "-vn", "-acodec", "pcm_s16le", "-ar", "48000", "-ac", "1",
             output_path
         ])
 
