@@ -7,7 +7,7 @@ from src.sesKayit import SesKayit  # OBS tabanlı ses kaydı sınıfı
 from src.model import ModelEgitimi
 from src.canliFiltre import CanliSesFiltreleme
 import threading
-
+from collections import deque
 
 class Main:
     def __init__(self):
@@ -20,7 +20,9 @@ class Main:
         self.highcut = 2000
         self.kullanici_geri_bildirim = None  # Kullanıcı geri bildirimi
         self.geri_bildirim_thread = None
-
+        # Son 2 kayıt (önceki ve şu anki) tutulur
+        self.kayitlar = deque(maxlen=2)
+        self.geri_bildirim_lock = threading.Lock()
         # OBS video dosyaları için klasör yolları
         video_folder_english = os.path.join(os.path.expanduser("~"), "Videos")
         video_folder_turkish = os.path.join(os.path.expanduser("~"), "Videolar")
@@ -78,10 +80,15 @@ class Main:
             return False
 
     def kullanici_geri_bildirim_thread(self):
-        """Kullanıcıdan geri bildirim almak için sürekli çalışan bir thread."""
         while True:
-            self.kullanici_geri_bildirim = input("Geri bildirim (1: rahatsız edici, 0: normal, Enter: boş bırak): ")
-            time.sleep(5)  # 5 saniyede bir kullanıcı geri bildirimi alınacak
+            feedback = input("Geri bildirim (1: rahatsız edici, 0: normal, Enter: boş bırak): ")
+            with self.geri_bildirim_lock:
+                for kayit in reversed(self.kayitlar):
+                    if not kayit.get("feedback"):
+                        kayit["feedback"] = feedback
+                        print(f"Geri bildirim eşlendi → {kayit['timestamp']} için: {feedback}")
+                        break
+            time.sleep(6)
 
     def load_model_parameters(self):
         """Model parametrelerini dosyadan yükler"""
@@ -116,15 +123,28 @@ class Main:
                 timestamp = int(time.time())
                 wav_path = os.path.join(self.output_dir, f"obs_kayit_{timestamp}.wav")
                 self.convert_to_wav(latest_video, wav_path)
+
+                # Yeni kaydı ekle
+                self.kayitlar.append({
+                    "timestamp": timestamp,
+                    "path": wav_path,
+                    "feedback": None
+                })
+
                 if not (self.geri_bildirim_thread and self.geri_bildirim_thread.is_alive()):
                     self.geri_bildirim_thread = threading.Thread(target=self.kullanici_geri_bildirim_thread)
                     self.geri_bildirim_thread.start()  # Geri bildirim thread'ini başlat
-                # Eğer kullanıcı geri bildirim verdiyse, model eğitimi yapılır
-                if self.kullanici_geri_bildirim:
-                    lc, hc = self.model_egitim.egit(wav_path, self.kullanici_geri_bildirim)
-                    print(f"Güncellenmiş lowcut: {lc}, highcut: {hc}")
+                    # Önceki kayıt varsa, geri bildirim varsa eğit
+                if len(self.kayitlar) >= 1:
+                    onceki_kayit = self.kayitlar[0]
+                    if onceki_kayit.get("feedback"):
+                        lc, hc = self.model_egitim.egit(onceki_kayit["path"], onceki_kayit["feedback"])
+                        print(f"Güncellenmiş lowcut: {lc}, highcut: {hc}")
+                    else:
+                        print("[⚠] Önceki kayda geri bildirim alınmadı.")
+                        lc, hc = self.load_model_parameters()
                 else:
-                    print("Geri bildirim verilmedi, varsayılan parametrelerle devam ediliyor.")
+                    print("[ℹ] İlk geri bildirim henüz alınamadı.")
                     lc, hc = self.load_model_parameters()
                 # Frekans analizi yap
                 frekans_analizi = FrekansAnalizi(lowcut=lc, highcut=hc)
