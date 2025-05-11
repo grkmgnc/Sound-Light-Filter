@@ -1,5 +1,5 @@
 import json
-from src.frekansAnalizi import FrekansAnalizi
+from src.SesModul.frekansAnalizi import FrekansAnalizi
 
 
 class ModelEgitimi:
@@ -43,7 +43,7 @@ class ModelEgitimi:
                     self.lowcut+=self.learning_rate*10 # Test edilmeli
             self.save_model_parameters()
         # Eğer kullanıcı geri bildirimi 0 (normal ses) ise lowcut ve highcut aralığı dışındaki frekansları kontrol et ve learning rate ile kademeli güncelleme yap
-        elif kullanici_geri_bildirim==0: # Normal ses. NOT: Bu kısım canlı filtre aktifken de inaktifken de eğitime uygundur.
+        elif kullanici_geri_bildirim==0: # Normal ses. NOT: Bu kısım daha çok canlı filtre inaktifken eğitime uygundur.
             if min_frekans<self.lowcut and max_frekans>self.highcut:
                 if low_energy_out>high_energy_out:  # Eğer aralık dışındaki düşük enerji, aralık dışındaki yüksek enerjiden fazlaysa
                     self.lowcut -= self.learning_rate  # Lowcut aşağı kaydırılır
