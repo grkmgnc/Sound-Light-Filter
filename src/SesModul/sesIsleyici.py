@@ -2,15 +2,19 @@ import json
 import os
 import time
 import subprocess
-from src.frekansAnalizi import FrekansAnalizi
-from src.sesKayit import SesKayit  # OBS tabanlı ses kaydı sınıfı
-from src.model import ModelEgitimi
-from src.canliFiltre import CanliSesFiltreleme
+from src.SesModul.frekansAnalizi import FrekansAnalizi
+from src.SesModul.sesKayit import SesKayit  # OBS tabanlı ses kaydı sınıfı
+from src.SesModul.model import ModelEgitimi
+from src.SesModul.canliFiltre import CanliSesFiltreleme
 import threading
 from collections import deque
+from PyQt5.QtCore import QObject, pyqtSignal
 
-class Main:
+class SesModul(QObject):
+    recording_finished = pyqtSignal()  # Ses kaydı bittiğinde tetiklenecek sinyal
+
     def __init__(self):
+        super().__init__()
         self.ses_kaydi = SesKayit(duration=5, password="121361")
         self.model_egitim = ModelEgitimi()
         self.canli_filtre_thread = None
@@ -23,16 +27,17 @@ class Main:
         # Son 2 kayıt (önceki ve şu anki) tutulur
         self.kayitlar = deque(maxlen=2)
         self.geri_bildirim_lock = threading.Lock()
+        self.ilk_kayit_islem_gordumu = False  # İlk kaydın işlenip işlenmediğini takip etmek için
         # OBS video dosyaları için klasör yolları
         video_folder_english = os.path.join(os.path.expanduser("~"), "Videos")
         video_folder_turkish = os.path.join(os.path.expanduser("~"), "Videolar")
 
         # Hangi klasörün var olduğunu kontrol et
         if os.path.exists(video_folder_english):
-            self.obs_output_dir = video_folder_english
+            self.obs_output_dir = os.path.join(video_folder_english, "SIAF_obs")
             print(f"OBS kayıtları {self.obs_output_dir} klasörüne kaydedilecektir.")
         elif os.path.exists(video_folder_turkish):
-            self.obs_output_dir = video_folder_turkish
+            self.obs_output_dir = os.path.join(video_folder_turkish, "SIAF_obs")
             print(f"OBS kayıtları {self.obs_output_dir} klasörüne kaydedilecektir.")
         else:
             print("Videos veya Videolar klasörü bulunamadı!")
@@ -43,11 +48,16 @@ class Main:
             print("OBS klasörü bulunamadığı için işlem yapılamaz.")
             return
 
+        # SIAF_obs klasörünü oluştur
+        os.makedirs(self.obs_output_dir, exist_ok=True)
+
         # Analiz edilecek .wav dosyalarının kaydedileceği klasör
         self.output_dir = os.path.join(os.getcwd(), "data", "kaydedilen_sesler")
         os.makedirs(self.output_dir, exist_ok=True)
-
-
+        
+        # Maksimum dosya sayısı
+        self.max_files = 50  # Her klasör için maksimum dosya sayısı
+        self.max_obs_files = 20  # OBS video dosyaları için maksimum sayı
 
     def convert_to_wav(self, input_path, output_path):
         """OBS'nin oluşturduğu video dosyasından .wav çıkar."""
@@ -90,6 +100,20 @@ class Main:
                         break
             time.sleep(6)
 
+    def geri_bildirim_ekle(self, feedback):
+        if feedback not in ("0", "1"):
+            print("[⚠] Geçersiz geri bildirim. Sadece '0' (normal) veya '1' (rahatsız edici) girilebilir.")
+            return
+
+        with self.geri_bildirim_lock:
+            for kayit in reversed(self.kayitlar):
+                if not kayit.get("feedback"):
+                    kayit["feedback"] = feedback
+                    print(f"[📝] Geri Bildirim Eşlendi → {kayit['timestamp']}: {feedback}")
+                    return
+
+            print("[ℹ] Tüm kayıtlar zaten geri bildirim aldı. Yeni geri bildirim bekleniyor.")
+
     def load_model_parameters(self):
         """Model parametrelerini dosyadan yükler"""
         try:
@@ -103,14 +127,69 @@ class Main:
             print("Model parametre dosyası bulunamadı, varsayılan parametreler kullanılacak.")
             return self.lowcut,self.highcut
 
+    def start_and_stop_recording(self):
+        """5 saniyelik ses kaydını başlatır ve durdurur."""
+        # Kaydı başlat
+        self.ses_kaydi.start_recording()
+
+        # 5 saniye bekleyin (ses kaydının süresi)
+        time.sleep(self.ses_kaydi.duration)
+
+        # Kaydı durdur (sinyal otomatik olarak tetiklenecek)
+        self.ses_kaydi.stop_recording()
+
+    def cleanup_old_files(self):
+        """Eski ses dosyalarını temizler."""
+        try:
+            # Kaydedilen sesler klasörünü temizle
+            files = sorted([os.path.join(self.output_dir, f) for f in os.listdir(self.output_dir) 
+                          if f.endswith('.wav')], key=os.path.getctime)
+            if len(files) > self.max_files:
+                for old_file in files[:-self.max_files]:
+                    try:
+                        os.remove(old_file)
+                        print(f"Eski dosya silindi: {old_file}")
+                    except Exception as e:
+                        print(f"Dosya silinirken hata oluştu: {e}")
+
+        except Exception as e:
+            print(f"Dosya temizleme işlemi sırasında hata oluştu: {e}")
+
+    def cleanup_obs_files(self):
+        """OBS'nin oluşturduğu eski video dosyalarını temizler."""
+        if not self.obs_output_dir:
+            return
+
+        try:
+            # Video dosyalarını bul ve tarihe göre sırala
+            files = sorted([os.path.join(self.obs_output_dir, f) for f in os.listdir(self.obs_output_dir)
+                          if f.endswith(('.mkv', '.mp4', '.mov'))], key=os.path.getctime)
+            
+            # Maksimum dosya sayısını aşan eski dosyaları sil
+            if len(files) > self.max_obs_files:
+                for old_file in files[:-self.max_obs_files]:
+                    try:
+                        os.remove(old_file)
+                        print(f"Eski OBS video dosyası silindi: {old_file}")
+                    except Exception as e:
+                        print(f"OBS video dosyası silinirken hata oluştu: {e}")
+
+        except Exception as e:
+            print(f"OBS dosya temizleme işlemi sırasında hata oluştu: {e}")
+
     def run(self):
         try:
             #self.ses_kaydi.get_obs_install_path()
             #self.ses_kaydi.start_obs()
             self.ses_kaydi.connect()
+            lc, hc = self.load_model_parameters()
+            print("→ İlk CanliSesFiltreleme başlatılıyor...")
+            self.canli_filtre = CanliSesFiltreleme(lowcut=lc, highcut=hc, stop_event=self.stop_event)
+            self.canli_filtre_thread = threading.Thread(target=self.canli_filtre.start_stream, daemon=True)
+            self.canli_filtre_thread.start()
             while True:
                 # OBS ile 5 saniyelik kayıt al
-                self.ses_kaydi.start_and_stop_recording()
+                self.start_and_stop_recording()
                 #time.sleep(3)
 
                 # En son kaydedilen video dosyasını bul
@@ -130,6 +209,16 @@ class Main:
                     "path": wav_path,
                     "feedback": None
                 })
+
+                # Eski dosyaları temizle
+                self.cleanup_old_files()
+                self.cleanup_obs_files()  # OBS video dosyalarını temizle
+
+                # İlk kayıt işlem gördüyse veya bu ilk kayıt değilse sinyali tetikle
+                if self.ilk_kayit_islem_gordumu or len(self.kayitlar) > 1:
+                    pass  # Sinyali kaldırdık
+                else:
+                    self.ilk_kayit_islem_gordumu = True
 
                 if not (self.geri_bildirim_thread and self.geri_bildirim_thread.is_alive()):
                     self.geri_bildirim_thread = threading.Thread(target=self.kullanici_geri_bildirim_thread)
@@ -179,7 +268,4 @@ class Main:
             self.ses_kaydi.disconnect()
 
 
-if __name__ == "__main__":
-    # Main sınıfını başlat ve çalıştır
-    app = Main()
-    app.run()
+
