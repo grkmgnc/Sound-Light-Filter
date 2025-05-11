@@ -3,7 +3,7 @@ import time
 import soundfile as sf
 import pyaudio
 import numpy as np
-from src.filtre import DSPFiltreleme  # int16 giriş-çıkış uyumlu sürüm
+from src.SesModul.filtre import DSPFiltreleme  # int16 giriş-çıkış uyumlu sürüm
 
 class CanliSesFiltreleme:
     def __init__(self, lowcut=50, highcut=2000, rate=48000, chunk_size=2048,
@@ -14,6 +14,7 @@ class CanliSesFiltreleme:
         self.chunk_size = chunk_size
         self.output_dir = output_dir
         self.stop_event = stop_event or self._create_default_stop_event()
+        self.max_files = 50  # Maksimum dosya sayısı
 
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
@@ -23,6 +24,8 @@ class CanliSesFiltreleme:
         self.output_device_keywords = ["Voicemeeter Input"]
         self.input_device_index = self._find_device(self.input_device_keywords, is_input=True)
         self.output_device_index = self._find_device(self.output_device_keywords, is_input=False)
+        self.min_hz=None
+        self.max_hz=None
 
     def _create_default_stop_event(self):
         import threading
@@ -65,6 +68,21 @@ class CanliSesFiltreleme:
 
         return np.min(aktif_frekanslar), np.max(aktif_frekanslar)
 
+    def cleanup_old_files(self):
+        """Eski filtrelenmiş ses dosyalarını temizler."""
+        try:
+            files = sorted([os.path.join(self.output_dir, f) for f in os.listdir(self.output_dir) 
+                          if f.endswith('.wav')], key=os.path.getctime)
+            if len(files) > self.max_files:
+                for old_file in files[:-self.max_files]:
+                    try:
+                        os.remove(old_file)
+                        print(f"Eski filtrelenmiş dosya silindi: {old_file}")
+                    except Exception as e:
+                        print(f"Filtrelenmiş dosya silinirken hata oluştu: {e}")
+        except Exception as e:
+            print(f"Filtrelenmiş dosya temizleme işlemi sırasında hata oluştu: {e}")
+
     def start_stream(self):
         print("[start_stream] Başladı")
         input_stream = None
@@ -95,22 +113,31 @@ class CanliSesFiltreleme:
             print("[start_stream] Giriş akışı açık. Döngüye giriliyor...")
 
             while not self.stop_event.is_set():
-                raw = input_stream.read(self.chunk_size, exception_on_overflow=False)
-                input_data = np.frombuffer(raw, dtype=np.int16)
-                print(f"[DEBUG] input max: {np.max(input_data):.5f}")
-                filtered = dsp.filtrele(input_data)
-                print(f"[DEBUG] filtered max: {np.max(filtered):.5f}")
-                min_hz, max_hz = self.analiz_frekans_araligi(filtered, self.rate)
-                print(f"[Frekans] Min: {min_hz:.2f} Hz | Max: {max_hz:.2f} Hz")
+                try:
+                    raw = input_stream.read(self.chunk_size, exception_on_overflow=False)
+                    input_data = np.frombuffer(raw, dtype=np.int16)
+                    print(f"[DEBUG] input max: {np.max(input_data):.5f}")
+                    filtered = dsp.filtrele(input_data)
+                    print(f"[DEBUG] filtered max: {np.max(filtered):.5f}")
+                    self.min_hz, self.max_hz = self.analiz_frekans_araligi(filtered, self.rate)
+                    print(f"[Frekans] Min: {self.min_hz:.2f} Hz | Max: {self.max_hz:.2f} Hz")
 
-                output_stream.write(filtered.tobytes())
-                filtered_frames.append(filtered.copy())
+                    output_stream.write(filtered.tobytes())
 
+                    # Sadece son 5 saniyelik sesi tut
+                    if len(filtered_frames) >= int(self.rate / self.chunk_size) * 5:
+                        filtered_frames.pop(0)
+                    filtered_frames.append(filtered.copy())
+                    time.sleep(0.001)
+                except Exception as e:
+                    print(f"[❌] Akış hatası: {e}")
+                    break
             print("[start_stream] stop_event algılandı. Döngü sonlandırılıyor...")
 
         except Exception as e:
+            import traceback
             print(f"[start_stream] HATA: {e}")
-
+            traceback.print_exc()
         finally:
             print("[start_stream] finally bloğu çalışıyor. Kapanış işlemleri yapılıyor.")
             if input_stream:
@@ -127,5 +154,7 @@ class CanliSesFiltreleme:
                 output_filename = os.path.join(self.output_dir, f"filtered_audio_{timestamp}.wav")
                 sf.write(output_filename, final_audio, self.rate)
                 print(f"[start_stream] Filtrelenmiş ses kaydedildi: {output_filename}")
+                # Eski dosyaları temizle
+                self.cleanup_old_files()
             else:
                 print("[start_stream] Kayıt yapılacak ses bulunamadı.")
