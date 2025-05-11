@@ -51,9 +51,10 @@ class FrekansAnalizi:
 
         valid_frequencies = np.where((mel_frequencies >= min_frekans) & (mel_frequencies <= max_frekans))[0]
         mel_frequencies_in_range = mel_frequencies[valid_frequencies]
-
-        print(f"Minimum frekans: {min_frekans} Hz")
-        print(f"Maksimum frekans: {max_frekans} Hz")
+        print()
+        print(f"**********Minimum yoğun frekans: {min_frekans} Hz**********")
+        print(f"**********Maksimum yoğun frekans: {max_frekans} Hz**********")
+        print()
         # Low ve High frekansları belirle
         # Mel frekansları aralığı içinde lowcut ve highcut'a karşılık gelen indeksleri bulun
         averagecut=(self.lowcut + self.highcut)/2
@@ -77,5 +78,5 @@ class FrekansAnalizi:
         #grafik_thread = threading.Thread(target=self._grafik_ac, args=(S_dB, sr, ses_verisi))
         #grafik_thread.daemon = True  # Ana program bitince thread de sonlansın
         #grafik_thread.start()
-        self._grafik_ac(S_dB,sr,ses_verisi)
+        #self._grafik_ac(S_dB,sr,ses_verisi)
         return S_dB, low_energy, high_energy, min_frekans, max_frekans,low_energy_out,high_energy_out
