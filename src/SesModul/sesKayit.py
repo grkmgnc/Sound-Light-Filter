@@ -20,13 +20,24 @@ class SesKayit:
         self.duration = duration
         self.ws = obsws(self.host, self.port, self.password)
         self.obs_path=None
+
     def connect(self):
         """OBS WebSocket'e bağlan."""
         try:
             self.ws.connect()
+            # Kayıt klasörünü ayarla
+            if self.obs_path:
+                obs_dir = os.path.dirname(self.obs_path)
+                config_path = os.path.join(obs_dir, "config", "global.ini")
+                if os.path.exists(config_path):
+                    # OBS'nin kayıt klasörünü ayarla
+                    self.ws.call(requests.SetFilenameFormatting("SIAF_obs/%Y-%m-%d %H-%M-%S"))
+                    print("OBS kayıt klasörü ayarlandı.")
             print("OBS'ye bağlanıldı.")
+            return True
         except Exception as e:
             print(f"OBS'ye bağlanırken hata oluştu: {e}")
+            return False
 
     def disconnect(self):
         """OBS WebSocket bağlantısını sonlandır."""
