@@ -28,28 +28,21 @@ class SesModul(QObject):
         self.kayitlar = deque(maxlen=2)
         self.geri_bildirim_lock = threading.Lock()
         self.ilk_kayit_islem_gordumu = False  # İlk kaydın işlenip işlenmediğini takip etmek için
-        # OBS video dosyaları için klasör yolları
+
+        # OBS video dosyaları için klasör yolu
         video_folder_english = os.path.join(os.path.expanduser("~"), "Videos")
         video_folder_turkish = os.path.join(os.path.expanduser("~"), "Videolar")
-
+        
         # Hangi klasörün var olduğunu kontrol et
         if os.path.exists(video_folder_english):
-            self.obs_output_dir = os.path.join(video_folder_english, "SIAF_obs")
+            self.obs_output_dir = video_folder_english
             print(f"OBS kayıtları {self.obs_output_dir} klasörüne kaydedilecektir.")
         elif os.path.exists(video_folder_turkish):
-            self.obs_output_dir = os.path.join(video_folder_turkish, "SIAF_obs")
+            self.obs_output_dir = video_folder_turkish
             print(f"OBS kayıtları {self.obs_output_dir} klasörüne kaydedilecektir.")
         else:
             print("Videos veya Videolar klasörü bulunamadı!")
             self.obs_output_dir = None
-
-        # Eğer klasör bulunursa, devam et
-        if not self.obs_output_dir:
-            print("OBS klasörü bulunamadığı için işlem yapılamaz.")
-            return
-
-        # SIAF_obs klasörünü oluştur
-        os.makedirs(self.obs_output_dir, exist_ok=True)
 
         # Analiz edilecek .wav dosyalarının kaydedileceği klasör
         self.output_dir = os.path.join(os.getcwd(), "data", "kaydedilen_sesler")
