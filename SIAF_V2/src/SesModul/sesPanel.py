@@ -28,10 +28,10 @@ class SoundPanel(QWidget):
     def __init__(self, geri_don_fonksiyonu):
         super().__init__()
         self.setWindowTitle("Ses Modülü Kontrol Paneli")
-        
+
         self.module = SesModul()
         self.module.recording_finished.connect(self.kayit_bitti)
-        
+
         self.geri_don_fonksiyonu = geri_don_fonksiyonu
         self.worker_signals = WorkerSignals()
         self.worker_signals.progress.connect(self.update_status)
@@ -40,17 +40,17 @@ class SoundPanel(QWidget):
         self.worker_signals.update_combo.connect(lambda: self.combo.setCurrentIndex(0))
         self.worker_signals.update_feedback.connect(self.update_feedback_status)
         self.worker_signals.recording_finished.connect(self.kayit_bitti)
-        
+
         self.recording_thread = None
         self.log_thread = None
         self.stop_event = threading.Event()
-        
+
         self.renkler = ["#2196F3", "#F44336", "#4CAF50", "#FF9800", "#9C27B0"]
         self.renk_index = 0
         self.kayit_sayac = 1
         self.aktif_barlar = []
         self.ilk_bar_olusturuldu = False
-        
+
         self.log_path = os.path.join("data", "logs", "frekans_log.jsonl")
         os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
         self.log_file = os.path.join("data", "logs", "app_log.json")
@@ -60,7 +60,7 @@ class SoundPanel(QWidget):
         # Ana layout'u oluştur
         self.main_layout = QVBoxLayout()
         self.setLayout(self.main_layout)
-        
+
         # UI'ı kur
         self.setup_ui()
 
@@ -68,62 +68,69 @@ class SoundPanel(QWidget):
         # Ana container
         main_container = QFrame()
         main_layout = QVBoxLayout(main_container)
-        
+
         # Header
         header = QFrame()
         header_layout = QHBoxLayout(header)
-        
-        btn_geri = QPushButton("🔙 Geri Dön")
+        header_layout.setContentsMargins(5, 5, 5, 5)
+
+        btn_geri = QPushButton("<< Geri Dön")
         btn_geri.clicked.connect(self.geri_don)
+        btn_geri.setMinimumHeight(20)
+        btn_geri.setMinimumWidth(150)
         header_layout.addWidget(btn_geri)
-        
+
         title = QLabel("🎙️ Ses Filtreleme Paneli")
+        title.setMinimumHeight(25)
         header_layout.addWidget(title)
         header_layout.addStretch()
-        
+
         main_layout.addWidget(header)
-        
+
         # Filtre toggle
         self.filter_container = QFrame()
         filter_layout = QHBoxLayout(self.filter_container)
-        
+
         self.filtre_toggle = QCheckBox("🔄 Canlı Filtrelemeyi Aç/Kapat")
         self.filtre_toggle.setChecked(True)
+        self.filtre_toggle.setMinimumHeight(60)
         self.filtre_toggle.stateChanged.connect(self.filtre_durumunu_degistir)
         filter_layout.addWidget(self.filtre_toggle)
-        
+
         main_layout.addWidget(self.filter_container)
-        
+
         # Feedback section
         self.feedback_container = QFrame()
         feedback_layout = QVBoxLayout(self.feedback_container)
         feedback_layout.setSpacing(10)
-        
+
         # ComboBox ve buton için yatay layout
         input_layout = QHBoxLayout()
         input_layout.setSpacing(10)
-        
+
         self.combo = QComboBox()
         self.combo.addItems(["(Boş)", "0 - Normal", "1 - Rahatsız Edici"])
-        
+        self.combo.setMinimumHeight(80)
+
         self.send_btn = QPushButton("Geri Bildirimi Gönder")
         self.send_btn.clicked.connect(self.feedback_gonder)
-        
+
         input_layout.addWidget(self.combo)
         input_layout.addWidget(self.send_btn)
-        
+
         self.bildirim_durumu = QLabel("")
-        
+
         self.bilgi_label = QLabel("🔔 Anlık problem yaşadığınız bir sese geri bildirim verecekseniz bir sonraki geri bildirim barını bekleyiniz. 🔔")
         self.bilgi_label.setAlignment(Qt.AlignCenter)
-        
+        self.bilgi_label.setMinimumHeight(80)
+
         feedback_layout.addLayout(input_layout)
         feedback_layout.addWidget(self.bildirim_durumu)
         feedback_layout.addWidget(self.bilgi_label)
-        
+
         main_layout.addWidget(self.feedback_container)
         main_layout.addStretch()
-        
+
         self.main_layout.addWidget(main_container)
 
     def write_log_to_json(self, message):
@@ -219,7 +226,7 @@ class SoundPanel(QWidget):
 
             fb_label = QLabel(f"Geri Bildirim {sayac}")
             fb_label.setStyleSheet("")  # Tema fonksiyonu ile güncellenecek
-            
+
             fb_bar = QProgressBar()
             fb_bar.setMaximum(100)
             fb_bar.setValue(0)
@@ -240,7 +247,7 @@ class SoundPanel(QWidget):
 
             bar_layout.addWidget(fb_label)
             bar_layout.addWidget(fb_bar)
-            
+
             self.main_layout.addWidget(bar_container)
             self.aktif_barlar.extend([bar_container])
 

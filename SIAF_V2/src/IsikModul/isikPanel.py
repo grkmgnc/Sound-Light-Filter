@@ -56,8 +56,29 @@ class PopupPanel(QWidget):
 
         # Ayarlar butonu (sadece simge)
         self.settings_btn = QPushButton("⚙️")
-        self.settings_btn.setFixedSize(32, 32)
+        self.settings_btn.setObjectName("popup_settings_btn")
+        self.settings_btn.setFixedSize(36, 36)
         self.settings_btn.setCursor(Qt.PointingHandCursor)
+        self.settings_btn.setFont(QFont('Segoe UI Emoji', 22))
+        self.settings_btn.setStyleSheet("""
+            QPushButton#popup_settings_btn {
+                background: transparent;
+                color: #111;
+                border: none;
+                border-radius: 0px;
+                font-size: 22px;
+                margin: 0px;
+                padding: 0px;
+                min-width: 0px;
+                min-height: 0px;
+            }
+            QPushButton#popup_settings_btn:hover {
+                background: rgba(0,0,0,0.07);
+            }
+            QPushButton#popup_settings_btn:pressed {
+                background: rgba(0,0,0,0.15);
+            }
+        """)
         container_layout.addWidget(self.settings_btn, alignment=Qt.AlignCenter)
 
         layout.addWidget(container)
@@ -139,12 +160,16 @@ class LightPanel(QWidget):
         # Header
         header = QFrame()
         header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(5, 5, 5, 5)
 
-        btn_geri = QPushButton("🔙 Geri Dön")
+        btn_geri = QPushButton("<< Geri Dön")
         btn_geri.clicked.connect(self.geri_don)
+        btn_geri.setMinimumHeight(20)
+        btn_geri.setMinimumWidth(150)
         header_layout.addWidget(btn_geri)
 
         title = QLabel("💡 Işık Modülü Kontrol Paneli")
+        title.setMinimumHeight(25)
         header_layout.addWidget(title)
         header_layout.addStretch()
 
@@ -157,9 +182,11 @@ class LightPanel(QWidget):
 
         self.label_sonuc = QLabel("Durum: Hazır")
         self.label_sonuc.setAlignment(Qt.AlignCenter)
+        self.label_sonuc.setMinimumHeight(80)
 
         self.label_ortam = QLabel("💡 Ortam Işığı: -")
         self.label_ortam.setAlignment(Qt.AlignCenter)
+        self.label_ortam.setMinimumHeight(80)
 
         status_layout.addWidget(self.label_sonuc)
         status_layout.addWidget(self.label_ortam)
@@ -173,11 +200,13 @@ class LightPanel(QWidget):
 
         self.label_slider = QLabel()
         self.label_slider.setAlignment(Qt.AlignCenter)
+        self.label_slider.setMinimumHeight(80)
 
         self.slider = QSlider(Qt.Horizontal)
         self.slider.setRange(0, 100)
         self.slider.setValue(sbc.get_brightness(display=0)[0])
         self.slider.valueChanged.connect(self.parlaklik_degistir)
+        self.slider.setMinimumHeight(80)
         self.label_slider.setText(f"🔦 Parlaklık: {self.slider.value()}%")
 
         slider_layout.addWidget(self.label_slider)
@@ -207,25 +236,25 @@ class LightPanel(QWidget):
         """Işık değerlerini güncelle - ana thread'de çalışır"""
         try:
             print(f"[💡] LightPanel - Değerler alındı: Ortam={ortam:.1f}, Parlaklık={parlaklik}, PWM={pwm_durum}")
-            
+
             # PWM durumunu sakla
             self.pwm_durum = pwm_durum
-            
+
             # Ana panel'i güncelle
             self.label_ortam.setText(f"💡 Ortam Işığı: {ortam:.1f}")
-            
+
             # Popup'ı güncelle
             if hasattr(self, 'popup') and self.popup:
                 print("[💡] Popup güncelleniyor...")
                 self.popup.guncelle(ortam, parlaklik, pwm_durum)
             else:
                 print("[⚠] Popup bulunamadı!")
-            
+
             # Slider'ı güncelle (eğer otomatik modda ise)
             if not self.slider.isSliderDown():  # Kullanıcı slider'ı hareket ettirmiyorsa
                 self.slider.setValue(parlaklik)
                 self.label_slider.setText(f"🔦 Parlaklık: {parlaklik}% (otomatik)")
-            
+
             print("[💡] LightPanel - GUI güncellendi")
         except Exception as e:
             print(f"[⚠] Işık değerleri güncelleme hatası: {str(e)}")
@@ -237,20 +266,20 @@ class LightPanel(QWidget):
             try:
                 print("[💡] Işık izleme döngüsü başlatıldı")
                 pwm_check_counter = 0  # PWM kontrolü için sayaç
-                
+
                 # Kamerayı başlat
                 if self.camera is None:
                     self.camera = cv2.VideoCapture(0)
                     if not self.camera.isOpened():
                         print("[⚠] Kamera başlatılamadı!")
                         return
-                
+
                 while not self.stop_event.is_set():
                     try:
                         # Ortam ışığını ölç
                         ortam_parlaklik = self.ortam_isik_olc()
                         print(f"[💡] Ortam ışığı ölçüldü: {ortam_parlaklik:.1f}")
-                        
+
                         # PWM kontrolünü her 5 ölçümde bir yap
                         pwm_durum = "✅ PWM kontrol ediliyor..."
                         if pwm_check_counter >= 5:
@@ -258,16 +287,16 @@ class LightPanel(QWidget):
                             print(f"[💡] PWM durumu: {pwm_durum}")
                             pwm_check_counter = 0
                         pwm_check_counter += 1
-                        
+
                         # Mevcut parlaklığı al
                         parlaklik = sbc.get_brightness(display=0)[0]
                         print(f"[💡] Mevcut parlaklık: {parlaklik}%")
-                        
+
                         # Ana thread'de GUI'yi güncelle
                         print("[💡] Işık değerleri gönderiliyor...")
                         self.worker_signals.light_update.emit(ortam_parlaklik, parlaklik, pwm_durum)
                         print("[💡] Işık değerleri gönderildi")
-                        
+
                         # Parlaklık seviyesine göre otomatik ayarlama
                         if not self.slider.isSliderDown():  # Kullanıcı slider'ı hareket ettirmiyorsa
                             if ortam_parlaklik < 30:
@@ -285,7 +314,7 @@ class LightPanel(QWidget):
                             else:
                                 sbc.set_brightness(80)
                             print(f"[💡] Parlaklık otomatik ayarlandı (ortam: {ortam_parlaklik:.1f})")
-                        
+
                         time.sleep(2)  # 2 saniyede bir güncelle
                     except Exception as e:
                         print(f"[⚠] Döngü içi hata: {str(e)}")
@@ -389,10 +418,10 @@ class LightPanel(QWidget):
         try:
             # Parlaklığı ayarla
             sbc.set_brightness(value)
-            
+
             # GUI'yi güncelle
             self.label_slider.setText(f"🔦 Parlaklık: {value}% (manuel)")
-            
+
             # Popup'ı güncelle (mevcut ortam ışığı değerini kullan)
             if hasattr(self, 'popup') and self.popup:
                 # Mevcut ortam ışığı değerini al
@@ -402,15 +431,15 @@ class LightPanel(QWidget):
                     if ret:
                         gri = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                         ortam = np.mean(gri)
-                
+
                 # PWM durumunu al
                 pwm = "✅ PWM kontrol ediliyor..."
                 if hasattr(self, 'pwm_durum'):
                     pwm = self.pwm_durum
-                
+
                 # Popup'ı güncelle
                 self.popup.guncelle(ortam, value, pwm)
-            
+
             print(f"[💡] Parlaklık manuel olarak ayarlandı: {value}%")
         except Exception as e:
             print(f"[⚠] Parlaklık değiştirme hatası: {str(e)}")

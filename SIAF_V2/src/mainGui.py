@@ -8,7 +8,7 @@ sys.path.append(project_root)
 import threading
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
-    QPushButton, QStackedWidget, QLabel, QStyleFactory, QFrame, QSizePolicy
+    QPushButton, QStackedWidget, QLabel, QStyleFactory, QFrame, QSizePolicy, QGridLayout
 )
 from PyQt5.QtCore import Qt, QSettings
 from PyQt5.QtGui import QFont, QPalette, QColor
@@ -19,18 +19,18 @@ class ThemeManager:
     def __init__(self):
         self.settings = QSettings('SIAF', 'Theme')
         self.current_theme = self.settings.value('theme', 'light')
-        
+
     def apply_theme(self, app):
         if self.current_theme == 'dark':
             self.apply_dark_theme(app)
         else:
             self.apply_light_theme(app)
-            
+
     def toggle_theme(self, app):
         self.current_theme = 'dark' if self.current_theme == 'light' else 'light'
         self.settings.setValue('theme', self.current_theme)
         self.apply_theme(app)
-        
+
     def apply_dark_theme(self, app):
         palette = QPalette()
         palette.setColor(QPalette.Window, QColor(24, 24, 24))
@@ -61,20 +61,22 @@ class ThemeManager:
                 background-color: transparent;
             }
             QPushButton {
-                background-color: #1976D2;
-                color: #F5F5F5;
+                background-color: #E0E0E0;
+                color: #000000;
                 border: none;
-                border-radius: 10px;
+                border-radius: 15px;
                 font-size: 16px;
                 font-weight: bold;
                 font-family: 'Segoe UI', Arial;
-                padding: 10px 0;
+                padding: 20px;
+                margin: 10px;
+                min-height: 120px;
             }
             QPushButton:hover {
-                background-color: #2196F3;
+                background-color: #D0D0D0;
             }
             QPushButton:pressed {
-                background-color: #0D47A1;
+                background-color: #C0C0C0;
             }
             QLabel {
                 color: #F5F5F5;
@@ -134,7 +136,7 @@ class ThemeManager:
             }
         """)
         app.setPalette(palette)
-        
+
     def apply_light_theme(self, app):
         palette = QPalette()
         palette.setColor(QPalette.Window, QColor(245, 245, 245))
@@ -165,20 +167,22 @@ class ThemeManager:
                 background-color: transparent;
             }
             QPushButton {
-                background-color: #2196F3;
-                color: white;
+                background-color: #E0E0E0;
+                color: #000000;
                 border: none;
-                border-radius: 10px;
+                border-radius: 15px;
                 font-size: 16px;
                 font-weight: bold;
                 font-family: 'Segoe UI', Arial;
-                padding: 10px 0;
+                padding: 20px;
+                margin: 10px;
+                min-height: 120px;
             }
             QPushButton:hover {
-                background-color: #1976D2;
+                background-color: #D0D0D0;
             }
             QPushButton:pressed {
-                background-color: #0D47A1;
+                background-color: #C0C0C0;
             }
             QLabel {
                 color: #212121;
@@ -288,16 +292,18 @@ class AnaEkran(QWidget):
         # Butonlar için container
         buttons_container = QFrame()
         buttons_container.setObjectName("buttons_container")
-        buttons_layout = QVBoxLayout(buttons_container)
-        buttons_layout.setSpacing(14)
+        buttons_layout = QGridLayout(buttons_container)
+        buttons_layout.setSpacing(20)
+        buttons_layout.setContentsMargins(20, 20, 20, 20)
 
         button_style = """
             QPushButton {
-                border-radius: 10px;
+                border-radius: 15px;
                 font-size: 16px;
                 font-weight: bold;
                 font-family: 'Segoe UI', Arial;
-                padding: 10px 0;
+                padding: 20px;
+                min-height: 120px;
             }
         """
 
@@ -308,17 +314,21 @@ class AnaEkran(QWidget):
 
         for btn in [self.btn_calistir, self.btn_ses, self.btn_isik, self.btn_theme]:
             btn.setStyleSheet(button_style)
-            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-            btn.setMinimumHeight(44)
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             btn.setFont(QFont('Segoe UI', 16, QFont.Bold))
             btn.setCursor(Qt.PointingHandCursor)
-            buttons_layout.addWidget(btn)
+
+        # Grid layout'a butonları ekle
+        buttons_layout.addWidget(self.btn_calistir, 0, 0)
+        buttons_layout.addWidget(self.btn_ses, 0, 1)
+        buttons_layout.addWidget(self.btn_isik, 1, 0)
+        buttons_layout.addWidget(self.btn_theme, 1, 1)
 
         main_layout.addWidget(buttons_container)
         main_layout.addStretch(1)
 
         # Alt bilgi
-        footer = QLabel("© 2024 SIAF - Tüm Hakları Saklıdır")
+        footer = QLabel("© 2025 SIAF - Tüm Hakları Saklıdır")
         footer.setObjectName("footer")
         footer.setStyleSheet("""
             QLabel {
@@ -375,9 +385,9 @@ class AnaPencere(QMainWindow):
             QLabel {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2196F3, stop:1 #1976D2);
                 color: white;
-                padding: 20px;
+                padding: 5px;
                 border-radius: 10px;
-                margin: 15px;
+                margin: 5px;
                 font-size: 18px;
                 font-weight: bold;
                 font-family: 'Segoe UI', Arial;
@@ -434,10 +444,10 @@ class AnaPencere(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle(QStyleFactory.create('Fusion'))
-    
+
     theme_manager = ThemeManager()
     theme_manager.apply_theme(app)
-    
+
     pencere = AnaPencere()
     pencere.show()
     sys.exit(app.exec_())
